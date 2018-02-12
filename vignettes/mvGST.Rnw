@@ -1,0 +1,786 @@
+% -*- mode: noweb; noweb-default-code-mode: R-mode; -*-
+%\VignetteIndexEntry{mvGST Tutorial Vignette}
+%\VignetteDepends{mvGST, hgu133plus2.db}
+%\VignettePackage{mvGST}
+\documentclass[12pt, a4paper]{article}
+%<<style-Sweave, eval=TRUE, echo=FALSE, results=tex>>=
+%BiocStyle::latex()
+%@
+
+\title{mvGST:  Multivariate and Directional Gene Set Testing}
+\author{John R. Stevens$^1$, Dennis S. Mecham$^1$, and Garrett Saunders$^{1,2}$}
+
+\SweaveOpts{echo=TRUE}
+\usepackage{a4wide}
+\usepackage{hyperref}
+\usepackage{nameref}
+
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\parskip .5em
+\parindent 0em
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+% Eliminate + marker at beginning of continuation lines in code chunks
+<<echo=false>>=
+options(continue=" ")
+@
+
+\maketitle
+
+\small
+
+\begin{enumerate}
+\item Dept. of Mathematics and Statistics, 
+Utah State University\\ (\url{http://www.stat.usu.edu/jrstevens})
+\item Dept. of Mathematics, Brigham Young University -- Idaho
+\end{enumerate}
+
+\normalsize
+
+\vspace{3em}
+
+\begin{abstract}
+In a gene expression experiment (using oligo array, RNA-Seq, or other platform), 
+researchers typically seek to characterize differentially expressed genes based on 
+common gene function or pathway involvement.  The field of gene set testing provides 
+numerous characterization methods, some of which have proven to be more valid and 
+powerful than others. Previous gene set testing methods have focused on experimental
+designs where there is a single null hypothesis (usually involving association with a 
+continuous or categorical phenotype) for each gene.  However, increasingly common experimental 
+designs lead to multiple null hypotheses for each gene, and the characterization of 
+these multivariately differentially expressed genes is of great interest.\\
+
+The \Rpackage{mvGST} package provides tools to identify GO terms (gene sets)
+that are differentially active (up or down) in multiple comparisons (contrasts)
+of interest.  These tools are platform-independent, so results from Affymetrix, next-gen
+sequencing, or subsequent gene expression technology can be handled.  
+Given a matrix of p-values (rows for genes, 
+columns for contrasts), the \Rpackage{mvGST} package uses statistical methods from
+the field of meta-analysis to combine p-values for
+all genes annotated to each gene set, and then classify each gene set (or biological process) as being
+significantly more active (1), less active (-1), or not significantly differentially
+active (0) in each contrast of interest.  Where multiple contrasts are of interest,
+each gene set is assigned to a profile (across contrasts) of differential activity.
+Tools are also provided for visualizing (in a GO graph) the gene sets classified
+to a given profile.
+\end{abstract}
+
+\vspace{3em}
+
+
+\newpage
+
+\tableofcontents
+
+
+
+
+
+
+
+
+\section{Sample Data}
+\label{Intro}
+
+\subsection{Obatoclax (Affymetrix)}
+\label{Intro.obatoclax}
+
+These data, publicly available as GSE36149 from the Gene Expression Omnibus website 
+(\url{http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE36149}), were reported 
+by Urtishak et al. (2013).  
+Briefly, tissue samples were taken from two human leukemia cell lines
+(Line; R = RS4:11, S = SEM-K2), originally cultured from
+infant leukemia blood.  Three treatments were compared
+(Trt; C = control, L = low-dose obatoclax, H = high-dose
+obatoclax).  
+Gene expression was measured in each replicate using the Affymetrix Human Genome U133 Plus 2.0 Array.\\
+
+For the purposes of \Rpackage{mvGST} package demonstration, suppose that a
+research objective is to identify biological processes differentially active
+in one or more of the following four comparisons: low dose vs. control in RS4:11 cell line,
+high dose vs. control in RS4:11 cell line, low dose vs. control in SEM-K2 cell line,
+or high dose vs. control in SEM-K2 cell line.  Each gene individually can be tested for
+differential expression in these four comparisons by constructing four contrasts within the framework
+of the following model:
+\begin{eqnarray}
+  E \left[ Y_{ijk} \right] & = & \mu + Trt_i + Line_j + TrtLine_{ij}  \nonumber
+\end{eqnarray}
+Here, $Y_{ijk}$ is the log-scale expression of the gene in replicate $k$ of Trt $i$ in Line $j$.
+The sample code in Appendix \hyperref[A]{A}  shows how the tools of the \Rpackage{limma} package can be used
+to obtain p-values for each of these contrasts, for each gene individually.  
+The \Rfunction{obatoclax.pvals} object provided with the \Rpackage{mvGST} package
+contains these results:
+
+<<>>=
+library(mvGST)
+data(mvGSTsamples)
+head(obatoclax.pvals)
+@
+
+Note that (as a result of their construction in Appendix \hyperref[A]{A} ) these are ``one-sided'' or ``one-tailed'' p-values, as expected by the \Rpackage{mvGST} package.
+Using the first comparison as an example, the null hypothesis is ``expression in low dose and control are the same in the RS4 cell line''
+while the alternative hypothesis is ``expression in low dose exceeds that in control, in the RS4 cell line.''
+As a result, very small p-values in the first column of \Rfunction{obatoclax.pvals} 
+are evidence supporting
+``expression in low dose is greater than expression in control, in the RS4 cell line'' 
+while very large p-values
+are evidence supporting ``expression in low dose is less than expression in control, in the RS4 cell line.''
+
+Also, note that the row names correspond to genes and the column names correspond to contrasts
+of interest.  The `.' in the contrast names are important; the `RS4' and `SEMK2' that follow the `.'
+are considered by the \Rpackage{mvGST} package to be strata in the comparisons of interest.
+    
+The \Rpackage{mvGST} package can use these gene-level results to identify biological
+processes differentially active (up or down) in one or more of the comparisons of interest.
+This is demonstrated in Section \ref{Demo.obato}.
+
+
+
+
+
+\subsection{Parathyroid (RNA-Seq)}
+\label{Intro.parathyroid}
+
+These data, publicly available in the \Rpackage{parathyroidSE} package, were reported by
+Haglund et al. (2012).  
+Briefly, cell cultures of parathyroid tumors were taken from four patients
+(Patient; 1, 2, 3, 4),
+and exposed to one of three treatments (Treatment; DPN = diarylpropionitrite, 
+OHT = 4-hydroxytamoxifen, Control).  Samples were taken from each treated cell culture, and 
+gene expression was measured using RNA-Seq, with ENSEMBL gene names used.
+
+For the purposes of \Rpackage{mvGST} package demonstration, suppose that a
+research objective is to identify biological processes differentially active
+in one or more of the following three pairwise treatment comparisons: 
+OHT vs. DPN, OHT vs. Control, and DPN vs. Control.  Each gene individually can be tested for
+differential expression in these three comparisons by constructing three contrasts within the framework
+of the following model:
+\begin{eqnarray}
+  \log \left( E \left[ Y_{ijk} \right] \right) & = & \mu + Patient_i + Treatment_j \nonumber
+\end{eqnarray}
+Here, $Y_{ijk}$ is the mapped sequence count of the gene in replicate $k$ of Treatment $j$ in Patient $i$.
+The sample code in Appendix \hyperref[B]{B}  shows how the tools of the \Rpackage{DESeq2} package can be used
+to obtain p-values for each of these contrasts, for each gene individually.  
+The \Rfunction{parathyroid.pvals} object provided with the \Rpackage{mvGST} package
+contains these results:
+
+<<>>=
+head(parathyroid.pvals)
+@
+
+
+Again, note that (as a result of their construction in Appendix \hyperref[B]{B} ) these are ``one-sided'' or ``one-tailed'' p-values, as expected by the \Rpackage{mvGST} package.
+Using the first comparison as an example, the null hypothesis is ``expression in OHT and DPN are the same''
+while the alternative hypothesis is ``expression in OHT is greater than expression in DPN.''
+As a result, very small p-values in the first column of \Rfunction{parathyroid.pvals}
+are evidence supporting
+``expression in OHT is greater than expression in DPN'' 
+while very large p-values
+are evidence supporting ``expression in OHT is less than expression in DPN.''
+
+Also, note that the row names correspond to genes and the column names correspond to contrasts
+of interest.  The lack of `.' in the contrast names is important, as this tells
+the \Rpackage{mvGST} package that there are no strata in the comparisons of interest.
+    
+The \Rpackage{mvGST} package can use these gene-level results to identify biological
+processes differentially active (up or down) in one or more of the comparisons of interest.
+This is demonstrated in Section \ref{Demo.para}.
+
+
+
+
+\section{Multivariate and Directional Gene Set Testing}
+
+The statistical methods employed for gene set testing by the \Rpackage{mvGST} package
+are discussed in Stevens and Isom (2012) and Mecham (2014), and the key points are
+summarized in the bullet points below.  Here, italics are used to indicate
+text cited from Stevens and Isom (2012), and the obatoclax example
+from Section \ref{Intro.obatoclax} is used along with the biological process
+ontology as an example.
+
+\begin{itemize}
+
+  \item ``Multivariate'':
+    \begin{itemize}
+	  \item Expression data of genes annotated to a particular GO term
+     	  are used as proxy for the activity level of the corresponding biological process
+		  in a given treatment condition.
+      \item Multiple comparisons can be of simultaneous interest, as in
+	      seeking to identify biological processes that are more
+		  active in high dose than control in the RS4:11 cell line,
+		  but not differentially active between low dose and control
+		  in the RS4:11 cell line.
+	\end{itemize}
+
+  \item ``Directional'':
+    \begin{itemize}
+	  \item {\it A gene is annotated to a biological process only when the gene's product ``contributes to'' 
+the biological process (Hill et al. 2008). (Consequently, there is no annotation if a gene's product
+impedes or inhibits the biological process.) Then for a biological process to proceed, it is not
+necessarily sufficient for ``at least one'' of the contributing genes to be active. In fact, lower
+activity by any of the genes annotated to a biological process will ``disturb'' the biological
+process (Hill et al. 2008). Thus a more meaningful alternative in gene set testing would be
+that there is a consensus of activity among gene set members -- for example, that there is
+``collective support'' (Rice 1990) that the genes annotated to the biological process are more
+active in}  high dose than control in the RS4:11 cell line.
+     \item Using one-sided p-values (i.e., from a one-sided test) allows statements
+	  of directional activity differences, such as that a biological process is \underline{more}
+		  active in high dose than control in the RS4:11 cell line.
+	 \end{itemize}
+
+  \item For a given set of genes for each comparison of interest, the
+        p-values for the genes can be meaningfully combined using Stouffer's method
+		(Stouffer et al. 1949) from the field of meta-analysis, to arrive at
+		a single p-value for the corresponding biological process.  
+		{\it While Fisher's p-value combination method was found previously to be most powerful
+		(Fridley et al. 2010), it seems that it may be most powerful for a less meaningful alternative hypothesis.}
+		In cases were directionality is meaningful, consensus is the desired alternative,
+		and there Stouffer's method has been shown superior to competing methods (Whitlock 2005).
+		
+\end{itemize}
+
+
+
+
+
+
+
+\section{\Rpackage{mvGST} Package Demonstration}
+
+\subsection{Obatoclax Demonstration}
+\label{Demo.obato}
+
+\subsubsection{Obatoclax: \Rfunction{profileTable}}
+
+The following code chunk uses the \Rfunction{obatoclax.pvals} object introduced in 
+Section \ref{Intro.obatoclax} to classify biological processes into multivariate profiles across the
+four comparisons of interest, while restricting attention to only biological processes
+with between 10 and 200 genes annotated thereto.  Because the gene names (row names in \Rfunction{obatoclax.pvals})
+are Affymetrix probe set identifiers from the hgu133plus2 array version (corresponding
+to the human genome), the \Rfunction{gene.ID},
+\Rfunction{affy.chip}, and \Rfunction{organism} arguments are as specified in the call to function
+\Rfunction{profileTable}.  
+
+<<>>=
+library(hgu133plus2.db)
+test1 <- profileTable(obatoclax.pvals, gene.ID='affy', 
+  affy.chip='hgu133plus2', organism='hsapiens', 
+  minsize=10, maxsize=200)
+test1
+@
+% Preceding chunk returns this (but still works):
+%Warning message:
+%In rsqlite_fetch(res@ptr, n = n) :
+%  Don't need to call dbFetch() for statements, only for queries
+
+
+<<echo=FALSE>>=
+# Get which profile is c(-1, 0)
+k <- which(rownames(test1$results.table)=="c(-1, 0)")
+num.k <- as.numeric(test1$results.table[k,2])
+res <- pickOut(test1, row=k, col=2)
+@
+
+Recall the brief discussion of the contrast names in Section \ref{Intro.obatoclax}: the `RS4' and `SEMK2' that follow the `.'
+are considered by the \Rpackage{mvGST} package to be strata in the comparisons of interest.
+This can be seen in the above output, where the profiles were stratified by cell line (RS4 or SEMK2).
+Within each cell line, there were two contrasts of interest -- Low$-$Control and High$-$Control.
+Within each comparison, each biological process is classified as a $-1$ if the tested contrast 
+is significantly negative, as a $1$ if the tested contrast is significantly positive,
+and as a $0$ otherwise.  Based on the preceding output, 
+there are \Sexpr{num.k} biological processes in the SEMK2 cell line that are 
+classified as $-1$ in the
+Low vs. Control comparison (meaning they are significantly less active
+in the low dosage group than in the control group) and as $0$ in the High vs. Control
+comparison (meaning they have no significant activity difference between the
+high dosage and control groups).  This can be thought of as the (-1, 0) multivariate profile.
+
+\subsubsection{Obatoclax: \Rfunction{pickOut}}
+
+Note that these \Sexpr{num.k} biological processes correspond to row \Sexpr{k} and stratum 2
+of the \Rfunction{test1} table output above.  The \Rfunction{pickOut} function can be used
+to see which biological processes these are, by picking them out of the table.
+The object returned by \Rfunction{pickOut} is a data frame, with the first two columns
+being the GO identifier and description, followed by columns of p-values for each of
+the comparisons of interest.  In the following code chunk, the ``head'' of this object is 
+trimmed to ensure it will fit on the vignette page:\\
+
+\verb7> res <- pickOut(test1, row=7\Sexpr{k}\verb7, col=2)7\\
+\verb7> as.data.frame(apply(head(res),2,strtrim,width=60))7
+<<echo=FALSE>>=
+as.data.frame(apply(head(res),2,strtrim,width=60))
+@
+
+These GO-level p-values are the result of Stouffer's combination
+of the p-values of all genes in the gene set, and are returned as ``one-sided'' 
+or ``one-tailed'' p-values.  For example, very small p-values in the \verb7Low.SEMK27 column 
+of the \Rfunction{pickOut} output are evidence supporting
+``activity in low dose is greater than activity in control, in the SEMK2 cell line'' 
+while very large p-values (as for the biological processes in the preceding output)
+are evidence supporting ``activity in low dose is less than activity in control, in the SEMK2 cell line.''
+
+\subsubsection{Obatoclax: \Rfunction{go2Profile}}
+
+If there are certain GO terms of interest, the \Rfunction{go2Profile} function can be used 
+to identify their profile classification.  Note that a profile of NA values (and a warning message) 
+will be returned if a GO term of supposed interest (such as ``GO:dummmy'' in the following code chunk) 
+is not among the gene sets that were actually tested:
+
+<<>>=
+temp <- go2Profile(c("GO:0002274", "GO:0002544", "GO:dummy"), test1)
+temp
+@
+
+<<echo=FALSE>>=
+row <- temp$`GO:0002544`
+tab <- row$results.table
+rn <- rownames(tab)
+t <- tab[,1]==1
+prof <- unlist(strsplit(rn[t],"c"))[2]
+@
+
+This output shows, for each of the requested GO terms, the (Low vs. Control, High vs. Control)
+multivariate profile to which they were classified, for each strata.  For example, the row
+of the \verb8$`GO:0002544`8 output where \verb7RS47 is 1 indicates the profile to which
+that GO term was classified in the RS4 cell line; it is the \Sexpr{prof} profile.
+
+
+\subsubsection{Obatoclax: \Rfunction{graphCell}}
+
+<<echo=FALSE>>=
+# Get which profile is c(-1, 0)
+k <- which(rownames(test1$results.table)=="c(-1, 0)")
+num.k <- as.numeric(test1$results.table[k,2])
+@
+
+The \Rfunction{graphCell} function can be used to visualize (in a GO graph) the GO terms that
+were classified to a particular profile.  The function name
+is derived from the fact that it graphs GO terms from a specified cell in the
+\Rfunction{profileTable} output.  For example, the following code chunk
+visualizes (as red nodes) the \Sexpr{num.k} biological processes classified to the (-1, 0)
+multivariate profile (row \Sexpr{k} of \Rfunction{test1} table output) in the SEMK2 cell line
+(stratum \Sexpr{2}).\\
+
+\verb7> graphCell(test1, row=7\Sexpr{k}\verb7, col=2, print.legend=FALSE, interact=FALSE)7\\
+
+<<echo=FALSE, fig=TRUE>>=
+graphCell(test1, row=k, col=2, print.legend=FALSE, interact=FALSE)
+@
+
+
+In this preceding code chunk, the \verb7bg.col7 argument is used to force the GO graph portions of lesser interest 
+(i.e., GO terms other than the \Sexpr{num.k} classified to the (-1, 0) multivariate profile)
+into the ``background'' by using a lighter color.  
+The \verb7print.legend7 and \verb7interact7 arguments
+are set to \verb7FALSE7 just for convenience in creating this vignette.  If set to \verb7TRUE7,
+they allow interactivity with the graph (click on or near a node to see its description, ESC
+to end interactivity) and a printed summary of the graph (IDs and descriptions for all nodes).
+
+
+
+
+\subsection{Parathyroid Demonstration}
+\label{Demo.para}
+
+\subsubsection{Parathyroid: \Rfunction{profileTable}}
+\label{para.test2}
+
+The following code chunk uses the \Rfunction{parathyroid.pvals}
+object introduced in Section \ref{Intro.parathyroid} to classify biological
+processes into multivariate profiles across the three comparisons of interest.  
+Because the gene names (row names in
+\Rfunction{parathyroid.pvals}) are ENSEMBL identifiers and these are human genes,
+the \verb7gene.ID7 and \verb7organism7 arguments are as specified in the call
+to function \Rfunction{profileTable}.
+
+<<>>=
+test2 <- profileTable(parathyroid.pvals, gene.ID='ensembl',
+   organism='hsapiens')
+test2
+@
+
+
+<<echo=FALSE>>=
+# Get which profile is c(-1, -1, -1)
+#kk <- which(rownames(test2$results.table)=="c(-1, -1, -1)")
+kk <- 3
+num.kk <- as.numeric(test2$results.table[kk,1])
+res <- pickOut(test2, row=kk, col=1)
+@
+
+
+
+Because there was no `.' in the contrast names (see Section \ref{Intro.parathyroid}),
+there are no strata here -- so \Rfunction{profileTable} adds a column \verb7BP7
+for a single ``pseudo-stratum'' (biological processes).
+Based on the preceding output, there are \Sexpr{num.kk} biological
+processes classified to the (-1, -1, -1) multivariate profile, with comparisons in order
+(OHT$-$DPN, OHT$-$Control, DPN$-$Control).  In other words, there are \Sexpr{num.kk}
+biological processes significantly less active in OHT than in DPN, less active in OHT than in Control,
+and less active in DPN than in Control.  Put another way, for these \Sexpr{num.kk} biological processes,
+activity is less in OHT than in DPN, and in DPN than in Control.
+
+
+
+\subsubsection{Parathyroid: \Rfunction{pickOut}}
+
+The \Rfunction{pickOut} function can be used to identify these \Sexpr{num.kk} biological processes.
+In the following code chunk, the ``head'' of the resulting object is 
+trimmed to ensure it will fit on the vignette page:\\
+
+\verb7> res <- pickOut(test2, row=7\Sexpr{kk}\verb7, col=1)7\\
+\verb7> as.data.frame(apply(head(res),2,strtrim,width=60))7
+<<echo=FALSE>>=
+as.data.frame(apply(head(res),2,strtrim,width=60))
+@
+
+The three p-value columns in the preceding output represent ``one-sided'' or ``one-tailed''
+p-values from the Stouffer's combination for each GO term in the comparison named.
+For example, very small p-values in the \verb7DPN_Control.BP7 column of the \Rfunction{pickOut}
+output (as for the biological processes in the preceding output) are evidence supporting
+``activity in DPN is greater than activity in Control'' while very large p-values
+would be evidence supporting ``activity in DPN is less than activity in Control.''
+
+
+\subsubsection{Parathyroid: \Rfunction{graphCell}}
+
+The following code chunk visualizes (as red nodes) the \Sexpr{num.kk} biological processes 
+classified to the (-1, -1, -1)
+multivariate profile (row \Sexpr{kk} of \Rfunction{test2} table output).  Because
+there are no strata here, the column number is 1 (for the single ``pseudo-stratum'' \verb7BP7
+in the \Rfunction{profileTable} output).
+
+\verb7> graphCell(test2, row=7\Sexpr{kk}\verb7, col=1, print.legend=FALSE, interact=FALSE)7\\
+
+<<echo=FALSE, fig=TRUE>>=
+graphCell(test2, row=kk, col=1, print.legend=FALSE, interact=FALSE)
+@
+
+Such a large GO graph is probably most useful when the number of GO terms of interest is
+more manageable (i.e., smaller).
+
+
+
+
+
+
+
+
+\section{Multiple Comparison Adjustments}
+
+\subsection{Default: False Discovery Rate}
+
+With thousands of GO terms tested in possibly multiple comparisons of interest,
+attention must be paid to multiple comparisons adjustments and thresholds of significance.
+The default in the \Rpackage{mvGST} package (and in the \Rfunction{profileTable} function
+in particular) is to control the FDR at 0.05 using the Benjamini-Yekutieli adjustment (Benjamini \& Yekutieli 2001)
+within each comparison (contrast) of interest.
+This threshold can be modified using the \verb7sig.level7
+argument of the \Rfunction{profileTable} function.
+This Benjamini-Yekutieli adjustment allows for dependence among p-values, which is certainly
+the case with nested GO terms.
+
+
+\subsection{Short Focus Level Demonstration: Parathyroid Data}
+
+For those interested in controlling the family-wise error rate
+at a specified level within the structure of the GO graph, the \Rpackage{mvGST} package
+includes an interface to the Short Focus Level method (Saunders 2014; Saunders, Stevens, and Isom 2014).
+The following code chunk is not run here to conserve computation time in the creation of this vignette document:
+
+<<eval=FALSE>>=
+test3 <- profileTable(parathyroid.pvals, gene.ID='ensembl',
+  organism='hsapiens', mult.adj='SFL')
+@
+
+It takes about 4 hours on a desktop PC to run this full example.  
+
+Note that the Short Focus Level adjustment requires all ancestor and offspring nodes 
+of the GO terms of interest to be included in the set of tested GO terms 
+(Saunders 2014; Saunders, Stevens, and Isom 2014), so the \verb7minsize7 and \verb7maxsize7 arguments 
+are not used.
+
+For demonstration purposes of the \Rfunction{p.adjust.SFL} in this vignette, suppose we were only interested in the OHT vs. DPN
+comparison, and in the following set of GO terms that are ancestors of GO:0001775 and GO:0007275:\\
+
+<<>>=
+library(GO.db)
+xx <- as.list(GOBPANCESTOR)
+ancs <- sort( union( xx$`GO:0001775`, xx$`GO:0007275` ) )[-1]
+GOids <- c('GO:0001775','GO:0007275', ancs)
+GOids
+@
+
+We can get the p-values for the OHT vs. DPN comparison for each of these GO terms from the \verb7test27
+object created in Section \ref{para.test2}:
+
+<<>>=
+t <- is.element(test2$group.names, GOids)
+frame <- as.data.frame(test2$grouped.raw[t,])
+pvals <- frame$OHT_DPN.BP
+names(pvals) <- test2$group.names[t]
+@
+
+Note that the names of the p-values vector is the GO term IDs.  Then the \Rfunction{p.adjust.SFL} function
+can be called:
+
+<<>>=
+SFL.pvals <- p.adjust.SFL(pvals, ontology='BP', sig.level=.10)
+cbind(pvals, SFL.pvals)
+@
+
+Calling GO terms significant when \verb7SFL.pvals7 is less than 0.10 controls the family-wise error rate
+at 0.10, within the context of the GO graph.
+
+
+\newpage
+
+
+
+
+
+\begin{thebibliography}{80}
+
+\bibitem{BY2001}
+Benjamini Y. and Yekutieli D. (2001)
+``The control of the false discovery rate in multiple testing under dependencey,''
+{\it Annals of Statistics} 29:1165-1188.
+
+\bibitem{Fisher1932}
+Fisher R.A. (1932)
+{\it Statistical Methods for Research Workers}, 4th ed.
+Oliver and Boyd, Edinburgh.
+
+\bibitem{Fridley2010}
+Fridley B.L., Jenkins G.D., and Biernacka J.M. (2010)
+``Self-contained gene set analysis of expression data: An evaluation of existing and novel methods,''
+{\it PLoS ONE} 5(9):e12693.
+
+\bibitem{Haglund2012}
+Haglund F., Ma R., Huss M., Sulaiman L., Lu M., Nilsson I.L.,
+Hoog A., Juhlin C.C., Hartman J., and Larsson C. (2012)
+``Evidence of a Functional Estrogen Receptor in Parathyroid Adenomas,''
+{\it  The Journal of Clinical Endocrinology \& Metabolism} 97(12):4631-9.
+PMID: 23024189
+
+\bibitem{Hill2008}
+Hill D.P.,  Smith B.,  McAndrews-Hill M.S., and  Blake J.A. (2008)
+``Gene ontology annotations: what they mean and where they come from,''
+{\it BMC Bioinformatics} 9(Suppl 5):S2.
+
+\bibitem{Mecham2014}
+Mecham D. S. (2014)
+``mvGST: Multivariate and Directional Gene Set Testing,''
+M.S. Project, Utah State University, Department of Mathematics and Statistics.
+\url{http://digitalcommons.usu.edu/gradreports/382/}
+
+\bibitem{Rice1990}
+Rice W. R. (1990)
+``A consensus combined p-value test and the family-wide significance
+of component tests,''
+{\it Biometrics} 46(2):303-308.
+
+\bibitem{Saunders2014}
+Saunders G. (2014)
+``Family-wise error rate control in QTL mapping and gene ontology graphs with remarks on family selection,''
+Ph.D. thesis, Utah State University, Department of Mathematics and Statistics.
+\url{http://digitalcommons.usu.edu/etd/2164/}
+
+\bibitem{SFL2014}
+Saunders G., Stevens J.R., and Isom S.C. (2014)
+``A shortcut for multiple testing on the directed acyclic graph of Gene Ontology,''
+{\it BMC Bioinformatics} (under review).
+
+\bibitem{StevensIsom2012}
+Stevens J.R. and Isom S.C. (2012)
+``Gene Set Testing to Characterize Multivariately Differentially Expressed Genes,''
+Proceedings of Conference on Applied Statistics in Agriculture, pp. 125-137.
+
+\bibitem{Stouffer1949}
+Stouffer S. A., Suchman E.A., DeVinney L.C., Star S. A., and  Williams R.M.J. (1949)
+{\it The American Soldier, Vol. 1: Adjustment during Army Life}.
+Princeton University Press, Princeton.
+
+\bibitem{Urtishak2013}
+Urtishak K.A., Edwards A.Y., Wang L.S., Hudome A., et al. (2013)
+``Potent obatoclax cytotoxicity and activation of triple death mode
+killing across infant acute lymphoblastic leukemia,''
+{\it Blood} 121(14):2689-703. PMID: 23393050
+
+\bibitem{Whitlock2005}
+Whitlock M.C. (2005)
+``Combining probability from independent tests: the weighted
+z-method is superior to Fisher's approach,''
+{\it Journal of Evolutionary Biology} 18:1368-1373.
+
+
+\end{thebibliography}
+
+
+
+
+
+\newpage
+
+
+
+\section*{Appendix A: Constructing \Rfunction{obatoclax.pvals} object}
+\label{A}
+
+The \Rfunction{obatoclax.pvals} object was introduced in Section \ref{Intro.obatoclax}.
+
+
+After downloading the .CEL files from \url{http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE36149}
+and saving them to a directory (say ``C:$\backslash$folder$\backslash$data''), the .CEL files were renamed as follows
+to facilitate interpretation of the constructed contrasts:
+
+\begin{tabular}{c c c c c}
+         Sample  & Trt & Line & Rep & CELfile\\ \hline
+        GSM881823 & C  &  R   &  1 &  CR1.CEL\\
+        GSM881824 & L  &  R   &  1 &  LR1.CEL\\
+        GSM881825 & H  &  R   &  1 &  HR1.CEL\\
+        GSM881826 & C  &  S   &  1 &  CS1.CEL\\
+        GSM881827 & L  &  S   &  1 &  LS1.CEL\\
+        GSM881828 & H  &  S   &  1 &  HS1.CEL\\
+        GSM881829 & C  &  R   &  2 &  CR2.CEL\\
+        GSM881830 & L  &  R   &  2 &  LR2.CEL\\
+        GSM881831 & H  &  R   &  2 &  HR2.CEL\\
+        GSM881832 & C  &  S   &  2 &  CS2.CEL\\
+        GSM881833 & L  &  S   &  2 &  LS2.CEL\\
+        GSM881834 & H  &  S   &  2 &  HS2.CEL\\ \hline
+\end{tabular}
+
+
+Then the following R code (which is not run in this vignette, 
+simply to avoid needing the .CEL files with this \Rpackage{mvGST} package) was used on January 23, 2018
+to construct the \Rfunction{obatoclax.pvals} object
+for the \Rpackage{mvGST} package:
+
+<<eval=FALSE>>=
+### Objective is to identify gene sets differentially active
+### in one or more of the following comparisons:
+## G1 = RS4:11 cell line at low dose   (vs. control)
+## G2 = RS4:11 cell line at high dose  (vs. control)
+## G3 = SEM-K2 cell line at low dose   (vs. control)
+## G4 = SEM-K2 cell line at high dose  (vs. control)
+# 
+## Read in data
+library(affy)
+data <- ReadAffy(celfile.path="C:\\folder\\data")
+eset <- exprs(rma(data))
+colnames(eset)
+# [1] "CR1.CEL" "CR2.CEL" "CS1.CEL" "CS2.CEL" "HR1.CEL" "HR2.CEL" "HS1.CEL"
+# [8] "HS2.CEL" "LR1.CEL" "LR2.CEL" "LS1.CEL" "LS2.CEL"
+# 
+# Define simple function to convert two-tailed p-values to one-tailed, 
+#  based on means of comparison groups
+# - this assumes null: Mean2=Mean1 and alt: Mean2>Mean1, and
+#   diff = Mean2-Mean1
+p2.p1 <- function(p,diff)
+{
+  p1 <- rep(NA,length(p))
+  t <- diff >=0
+  p1[t] <- p[t]/2
+  p1[!t] <- 1-p[!t]/2
+  return(p1)
+}
+# 
+# Define function to return one-tailed p-values for a specific contrast,
+# sorted in order of geneNames
+p1.ctrst <- function(ctr)
+{
+  ctr <<- ctr
+  ctrst <- makeContrasts(ctr, levels=design)
+  fit.ctrst <- contrasts.fit(fit, ctrst)
+  final.fit.ctrst <- eBayes(fit.ctrst)
+  top.ctrst <- topTableF(final.fit.ctrst, n=nrow(eset))
+  p1 <- p2.p1(top.ctrst$P.Value, top.ctrst[,1])
+  gn <- rownames(top.ctrst)
+  names(p1) <- gn
+  t <- order(gn)
+  return(p1[t])
+}
+# 
+## Fit model
+library(limma)
+trt <- rep(c('C','H','L'),each=4)
+line <- rep(rep(c('R','S'),each=2),3)
+design <- model.matrix(~0+trt:line)
+head(design)
+colnames(design) <- c('CR','HR','LR','CS','HS','LS')
+fit <- lmFit(eset, design)
+# 
+## Create contrasts  
+# R: L vs. C   (G1)
+Low.RS4 <- p1.ctrst(ctr="LR-CR")
+# R: H vs. C   (G2)
+High.RS4 <- p1.ctrst("HR-CR")
+# S: L vs. C   (G3)
+Low.SEMK2 <- p1.ctrst("LS-CS")
+# S: H vs. C   (G4)
+High.SEMK2 <- p1.ctrst("HS-CS")
+# 
+## Assemble object for mvGST
+GN <- names(Low.RS4)
+o.pvals <- cbind(Low.RS4, High.RS4, Low.SEMK2, High.SEMK2)
+rownames(o.pvals) <- GN
+obatoclax.pvals <- o.pvals
+@
+
+
+
+\newpage
+
+
+\section*{Appendix B: Constructing \Rfunction{parathyroid.pvals} object}
+\label{B}
+
+The \Rfunction{parathyroid.pvals} object was introduced in Section \ref{Intro.parathyroid}.
+The following R code (which is not run in this vignette, 
+simply to avoid needing the \Rpackage{parathyroidSE} and \Rpackage{DESeq2} 
+packages with this \Rpackage{mvGST} package) was used on January 23, 2018
+to construct the \Rfunction{parathyroid.pvals} object
+for the \Rpackage{mvGST} package:
+
+<<eval=FALSE>>=
+# Load data
+library("parathyroidSE")
+data("parathyroidGenesSE")
+se <- parathyroidGenesSE
+colnames(se) <- colData(se)$run
+#
+# Fit model
+library("DESeq2")
+dds <- DESeqDataSet(se = se, design = ~ patient + treatment)
+design(dds) <- ~ patient + treatment
+ddsCtrst1 <- DESeq(dds)
+resultsNames(ddsCtrst1)
+#
+# Create contrasts
+res1 <- results(ddsCtrst1, contrast=c("treatment", "OHT", "DPN"))
+res2 <- results(ddsCtrst1, contrast=c("treatment", "OHT", "Control"))
+res3 <- results(ddsCtrst1, contrast=c("treatment", "DPN", "Control"))
+#
+# Assemble object for mvGST
+r1 <- res1[!is.na(res1$pvalue),]
+r2 <- res2[!is.na(res2$pvalue),]
+r3 <- res3[!is.na(res3$pvalue),]
+OHT_DPN <- p2.p1(r1$pvalue,r1$log2FoldChange)
+OHT_Control <- p2.p1(r2$pvalue,r2$log2FoldChange)
+DPN_Control <- p2.p1(r3$pvalue,r3$log2FoldChange)
+p.pvals <- cbind(OHT_DPN,OHT_Control,DPN_Control)
+GN <- rownames(r1)
+rownames(p.pvals) <- GN
+parathyroid.pvals <- p.pvals
+@
+
+This code is based on code found in the \Rpackage{DESeq2} package vignette.
+Note that the \Rfunction{p2.p1} function was defined in Appendix \hyperref[A]{A} .
+
+
+
+\end{document}

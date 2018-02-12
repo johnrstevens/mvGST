@@ -1,0 +1,147 @@
+                    CHANGES IN mvGST VERSION 1.14.0 
+
+OTHER CHANGES
+
+	o Fixed error in Bioconductor build, updated reference, updated
+      sample objects
+          
+          
+          CHANGES IN mvGST VERSION 0.99.3 
+
+OTHER CHANGES
+
+	o Removed suppressWarnings() from plot calls of interactiveGraph(),
+	  and made arrowheads be 'none' -- to avoid trivial warnings about
+	  zero-length arrows of indeterminate angle
+
+	o Cleaned up usage of switch() function calls in graphCell() 
+	  and generateGeneSets() functions
+
+
+          CHANGES IN mvGST VERSION 0.99.2 
+
+BUG FIXES
+
+	o Added section to p.adjust.SFL to have better error catching
+      and restrict GO terms to names in rawp (to match Focus Level
+	  method)
+
+OTHER CHANGES
+
+	o Added suppressWarnings() to plot calls of interactiveGraph
+	  (to avoid trivial warnings about edges that are too short
+	  to be plotted, which can happen when the number of GO terms
+	  is large in the call to graphCell)
+
+	o Updated nested if/else statements to 'switch' function calls
+
+	o Changed many 'cat' function calls to 'message' or 'warning'
+
+	o Made 'for' loops more robust through use of 'seq_along',
+	'seq_len', and 'seq.int'
+
+
+          CHANGES IN mvGST VERSION 0.99.1 
+
+OTHER CHANGES
+
+	o Modified Description field in DESCRIPTION file
+	
+	o Reordered import() lines in NAMESPACE file in an attempt
+	  to avoid the following two Bioconductor warnings:
+        Warning: multiple methods tables found for 'unsplit'
+        Warning: replacing previous import by 'IRanges::unsplit' 
+		when loading 'GenomeInfoDb'
+	  (mvGST does not call 'unsplit' in any way)
+	  
+
+	  
+	  
+          CHANGES IN mvGST VERSION 0.99.0 
+
+OTHER CHANGES
+
+	o Submitted to Bioconductor 8 August 2014
+
+
+	
+	
+          CHANGES IN mvGST VERSION 0.1.3 
+
+NEW FEATURES
+
+	o Added package vignette
+	
+    o Made graphCell more flexible with 'background' colors
+	  for graph elements of lesser interest.
+
+    o Made p.adjust.SFL more flexible to control FWER at
+	  a user-supplied FWER (rather than automatic 0.05).
+
+    o Implemented minsize and maxsize arguments to restrict
+	  sizes of gene sets of interest.
+
+BUG FIXES
+
+	o N/A
+
+OTHER CHANGES
+
+	o N/A
+	  
+
+	  
+	  
+          CHANGES IN mvGST VERSION 0.1.2 
+
+NEW FEATURES
+
+	o Added sample objects in data(mvGSTsamples)	 
+
+BUG FIXES
+
+	o Edited pickOut function to appropriately handle
+      non-multivariate profiles (i.e., where results.table
+      has only one column, or where only one contrast is of
+      interest)	  
+
+OTHER CHANGES
+
+	o Cleaned up package dependencies in DESCRIPTION and
+      NAMESPACE files
+
+   	o Cleaned up some .Rd files (especially examples)	 
+	  
+
+ 
+ 
+          CHANGES IN mvGST VERSION 0.1.1 
+
+NEW FEATURES
+
+  o The default method for accounting for gene name translation 
+    issues is now 'method = 2'.
+
+  o The arguments 'contrasts' and 'gene.names' in 'profileTable' 
+    are now optional. The information may be passed to 'profileTable'
+    as the row and column names of the argument 'pvals'.
+  
+  o The function 'pickOut' now returns a data frame with the GO 
+    descriptions and p-values for each contrasts tested as well as 
+    the GO ID.
+  
+  o The function 'graphCell' now has an optional argument that 
+    allows the user to enter the returns from 'pickOut' as the 
+    only argument.
+
+BUG FIXES
+    
+  o The output from 'profileTable' for 1 dimensional profiles 
+    now displays correctly.
+	
+OTHER CHANGES
+    
+  o Minor clarifications in help files.
+  
+  o 'pvals' is now the first argument in 'profileTable'.	 
+	

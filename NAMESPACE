@@ -1,0 +1,17 @@
+exportPattern("^[[:alpha:]]+")
+
+import(GO.db)
+import(Rgraphviz)
+
+importFrom(topGO, annFUN.db, annFUN.org)
+importFrom(AnnotationDbi, keys, Term, Ontology)
+importFrom(annotate, lookUp, getGOTerm)
+importFrom(GOstats, GOGraph)
+
+importFrom(gProfileR, gconvert)
+importFrom(stringr, str_trim)
+importFrom(graph, removeNode)
+
+importFrom("graphics", "locator")
+importFrom("stats", "p.adjust", "pnorm", "qnorm")
+importFrom("utils", "flush.console")
